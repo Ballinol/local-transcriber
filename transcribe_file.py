@@ -7,8 +7,9 @@ transcribe_file.py — видео/аудио → текстовый файл. Л
 
 Запуск:
     .venv\\Scripts\\python.exe transcribe_file.py "видео.mp4" [ещё файлы...]
-    опции: --model large-v3|large-v3-turbo|medium  --lang ru|en|auto  --srt  --device auto|cuda|cpu
-    (по умолчанию large-v3 — макс. качество; large-v3-turbo — в ~2 раза быстрее, чуть хуже)
+    опции: --model large-v3-turbo|large-v3|medium  --lang ru|en|auto  --srt  --device auto|cuda|cpu
+    (по умолчанию large-v3-turbo — быстрый и полный; large-v3 точнее по терминам,
+     но в ~5 раз медленнее и иногда галлюцинирует вступление)
 Результат: рядом с файлом создаётся <имя>.txt (и <имя>.srt при --srt).
 """
 import sys, argparse, time
@@ -70,7 +71,7 @@ def fmt_ts(sec: float) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("inputs", nargs="+", help="файлы видео/аудио")
-    ap.add_argument("--model", default="large-v3", help="large-v3 (макс. качество) | large-v3-turbo (быстрее) | medium")
+    ap.add_argument("--model", default="large-v3-turbo", help="large-v3-turbo (быстрый, полный) | large-v3 (точнее термины, медленнее) | medium")
     ap.add_argument("--lang", default="auto", help="ru / en / auto (автоопределение)")
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--compute-type", default="auto")

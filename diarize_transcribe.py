@@ -74,7 +74,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("--speakers", type=int, default=0, help="кол-во спикеров (0=авто)")
-    ap.add_argument("--model", default="large-v3", help="large-v3 (макс. качество) | large-v3-turbo (быстрее)")
+    ap.add_argument("--model", default="large-v3-turbo", help="large-v3-turbo (быстрый, полный) | large-v3 (точнее термины, медленнее)")
     ap.add_argument("--lang", default="auto")
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     args = ap.parse_args()
