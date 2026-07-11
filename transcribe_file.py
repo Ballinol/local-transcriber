@@ -20,6 +20,31 @@ except Exception:
 
 from faster_whisper import WhisperModel
 
+try:
+    import numpy as _np
+except Exception:
+    _np = None
+
+
+def load_whisper(name, device="auto", compute_type="auto"):
+    """Грузит Whisper с авто-откатом на CPU, если GPU/cuDNN недоступны.
+    Возвращает (model, фактическое_устройство)."""
+    order = ["cpu"] if device == "cpu" else ["cuda", "cpu"]
+    last = None
+    for dev in order:
+        ct = compute_type if compute_type != "auto" else ("float16" if dev == "cuda" else "int8")
+        try:
+            m = WhisperModel(name, device=dev, compute_type=ct)
+            if _np is not None:  # мини-прогон: провоцирует загрузку CUDA-библиотек
+                segs, _ = m.transcribe(_np.zeros(8000, dtype="float32"), beam_size=1)
+                list(segs)
+            return m, dev
+        except Exception as e:
+            last = e
+            if dev != order[-1]:
+                print(f"[i] {dev} недоступен ({type(e).__name__}), перехожу на CPU...")
+    raise last
+
 # Пунктуированный образец + термины: заставляет Whisper ставить точки/запятые/
 # заглавные и правильнее писать имена собственные (GitLab, Kubernetes и т.п.).
 INITIAL_PROMPT = (
@@ -52,8 +77,9 @@ def main():
     args = ap.parse_args()
 
     lang = None if args.lang == "auto" else args.lang
-    print(f"Загружаю faster-whisper {args.model} (device={args.device})...")
-    model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+    print(f"Загружаю faster-whisper {args.model}...")
+    model, dev = load_whisper(args.model, args.device, args.compute_type)
+    print(f"Устройство: {dev}")
 
     for inp in args.inputs:
         p = Path(inp)

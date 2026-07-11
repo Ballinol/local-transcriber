@@ -21,10 +21,9 @@ except Exception:
     pass
 
 import numpy as np
-from faster_whisper import WhisperModel
 from faster_whisper.audio import decode_audio
 
-from transcribe_file import INITIAL_PROMPT, HOTWORDS  # переиспользуем настройки
+from transcribe_file import INITIAL_PROMPT, HOTWORDS, load_whisper  # переиспользуем
 
 SR = 16000
 ECAPA = "speechbrain/spkrec-ecapa-voxceleb"
@@ -81,14 +80,17 @@ def main():
     args = ap.parse_args()
 
     lang = None if args.lang == "auto" else args.lang
-    dev = args.device
-    if dev == "auto":
+    # ECAPA (torch): GPU только если torch реально видит CUDA, иначе CPU
+    try:
         import torch
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        ecapa_dev = "cuda" if (args.device != "cpu" and torch.cuda.is_available()) else "cpu"
+    except Exception:
+        ecapa_dev = "cpu"
 
-    print(f"Загружаю Whisper {args.model} + ECAPA (device={dev})...")
-    model = WhisperModel(args.model, device=dev, compute_type="auto")
-    clf = _load_ecapa(dev)
+    print(f"Загружаю Whisper {args.model} + ECAPA...")
+    model, wdev = load_whisper(args.model, args.device, "auto")  # авто-откат на CPU
+    clf = _load_ecapa(ecapa_dev)
+    print(f"Устройство: Whisper={wdev}, ECAPA={ecapa_dev}")
 
     for inp in args.inputs:
         p = Path(inp)
