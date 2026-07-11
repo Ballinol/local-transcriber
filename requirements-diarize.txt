@@ -1,0 +1,7 @@
+# Дополнительно: разбивка по спикерам (diarize_transcribe.py)
+# Ставится поверх requirements.txt. torch здесь CPU-версия;
+# для NVIDIA GPU переустанови torch с --index-url (см. setup_diarize.bat / README).
+speechbrain>=1.0
+scikit-learn>=1.3
+torch>=2.0
+torchaudio>=2.0

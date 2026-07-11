@@ -1,0 +1,21 @@
+# venv и кэши
+.venv/
+__pycache__/
+*.pyc
+
+# скачанные модели (speechbrain ECAPA и т.п.)
+models/
+pretrained_models/
+
+# результаты транскрипции (не тащим в репозиторий)
+*.txt
+*.srt
+!requirements*.txt
+
+# медиа
+*.mp4
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.m4a
