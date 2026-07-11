@@ -21,11 +21,14 @@ except Exception:
     pass
 
 from faster_whisper import WhisperModel
+from faster_whisper.audio import decode_audio
 
 try:
     import numpy as _np
 except Exception:
     _np = None
+
+SR = 16000  # частота, к которой приводится аудио
 
 
 def load_whisper(name, device="auto", compute_type="auto"):
@@ -68,6 +71,17 @@ def fmt_ts(sec: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def _transcribe_array(model, wav, lang):
+    """Транскрибирует один numpy-массив аудио. Возвращает (список сегментов, info)."""
+    segs, info = model.transcribe(
+        wav, language=lang, beam_size=5, vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 500},
+        initial_prompt=INITIAL_PROMPT, hotwords=HOTWORDS,
+        condition_on_previous_text=True,
+    )
+    return list(segs), info
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("inputs", nargs="+", help="файлы видео/аудио")
@@ -76,6 +90,8 @@ def main():
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--compute-type", default="auto")
     ap.add_argument("--srt", action="store_true", help="также сохранить субтитры .srt с таймкодами")
+    ap.add_argument("--chunk-min", type=int, default=20,
+                    help="длинные файлы бьются на куски по N мин (стабильность на 1ч+)")
     args = ap.parse_args()
 
     lang = None if args.lang == "auto" else args.lang
@@ -83,37 +99,51 @@ def main():
     model, dev = load_whisper(args.model, args.device, args.compute_type)
     print(f"Устройство: {dev}")
 
+    chunk_len = max(1, args.chunk_min) * 60 * SR
+
     for inp in args.inputs:
         p = Path(inp)
         if not p.exists():
             print(f"[!] нет файла: {inp}"); continue
         print(f"\n=== {p.name} ===")
         t0 = time.perf_counter()
-        segments, info = model.transcribe(
-            str(p), language=lang, beam_size=5, vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-            initial_prompt=INITIAL_PROMPT, hotwords=HOTWORDS,
-            condition_on_previous_text=True,
-        )
-        print(f"язык: {info.language} ({info.language_probability:.0%}), "
-              f"длительность: {info.duration/60:.1f} мин — транскрибирую...")
+        print("декодирую аудио...", flush=True)
+        wav = decode_audio(str(p), sampling_rate=SR)
+        total = len(wav) / SR
+
+        # длинные файлы — по чанкам (иначе VAD на многочасовом аудио может зависнуть)
+        if len(wav) > chunk_len + 120 * SR:
+            starts = list(range(0, len(wav), chunk_len))
+            print(f"длительность: {total/60:.1f} мин → режим длинного файла: "
+                  f"{len(starts)} чанков по {args.chunk_min} мин")
+        else:
+            starts = [0]
+            print(f"длительность: {total/60:.1f} мин — транскрибирую...")
+
         txt_path = p.with_suffix(".txt")
         srt_path = p.with_suffix(".srt")
         n = 0
         with open(txt_path, "w", encoding="utf-8") as ftxt, \
              (open(srt_path, "w", encoding="utf-8") if args.srt else _Null()) as fsrt:
-            for seg in segments:
-                text = seg.text.strip()
-                ftxt.write(text + "\n")
-                if args.srt:
-                    n += 1
-                    fsrt.write(f"{n}\n{fmt_ts(seg.start)} --> {fmt_ts(seg.end)}\n{text}\n\n")
-                # прогресс по ходу (файл может быть длинным)
-                if int(seg.end) % 30 < 2:
-                    print(f"  ...{seg.end/60:.1f} мин", end="\r", flush=True)
+            for ci, a in enumerate(starts):
+                off = a / SR
+                segs, info = _transcribe_array(model, wav[a:a + chunk_len], lang)
+                if ci == 0:
+                    print(f"язык: {info.language} ({info.language_probability:.0%})")
+                for seg in segs:
+                    st, en = seg.start + off, seg.end + off
+                    text = seg.text.strip()
+                    ftxt.write(text + "\n")
+                    if args.srt:
+                        n += 1
+                        fsrt.write(f"{n}\n{fmt_ts(st)} --> {fmt_ts(en)}\n{text}\n\n")
+                ftxt.flush()  # чтобы прогресс был виден сразу
+                if len(starts) > 1:
+                    print(f"  чанк {ci+1}/{len(starts)} готов "
+                          f"(~{min((a+chunk_len)/SR, total)/60:.0f} мин)", flush=True)
         dt = time.perf_counter() - t0
-        speed = (info.duration / dt) if dt else 0
-        print(f"\n[ok] {txt_path.name}" + (f" + {srt_path.name}" if args.srt else "")
+        speed = (total / dt) if dt else 0
+        print(f"[ok] {txt_path.name}" + (f" + {srt_path.name}" if args.srt else "")
               + f"  ({dt:.0f}с, x{speed:.1f} быстрее реального времени)")
 
 
