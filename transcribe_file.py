@@ -12,7 +12,7 @@ transcribe_file.py — видео/аудио → текстовый файл. Л
      но в ~5 раз медленнее и иногда галлюцинирует вступление)
 Результат: рядом с файлом создаётся <имя>.txt (и <имя>.srt при --srt).
 """
-import sys, argparse, time
+import sys, argparse, time, re
 from pathlib import Path
 
 try:
@@ -71,6 +71,15 @@ def fmt_ts(sec: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+# Схлопывает 3+ подряд одинаковых слова/фразы внутри строки (петли Whisper),
+# не трогая естественные двойные повторы.
+_REPEAT = re.compile(r'(\b\w+(?:\s+\w+){0,5}?)(?:\s+\1\b){2,}', re.IGNORECASE)
+
+
+def _collapse_repeats(text):
+    return _REPEAT.sub(r'\1', text)
+
+
 def _transcribe_array(model, wav, lang):
     """Транскрибирует один numpy-массив аудио. Возвращает (список сегментов, info)."""
     segs, info = model.transcribe(
@@ -123,6 +132,7 @@ def main():
         txt_path = p.with_suffix(".txt")
         srt_path = p.with_suffix(".srt")
         n = 0
+        prev_line = None  # для схлопывания подряд-идущих одинаковых строк (артефакт зацикливания)
         with open(txt_path, "w", encoding="utf-8") as ftxt, \
              (open(srt_path, "w", encoding="utf-8") if args.srt else _Null()) as fsrt:
             for ci, a in enumerate(starts):
@@ -132,7 +142,10 @@ def main():
                     print(f"язык: {info.language} ({info.language_probability:.0%})")
                 for seg in segs:
                     st, en = seg.start + off, seg.end + off
-                    text = seg.text.strip()
+                    text = _collapse_repeats(seg.text.strip())  # гасим петли внутри строки
+                    if not text or text == prev_line:  # пропускаем пустое и подряд-повторы
+                        continue
+                    prev_line = text
                     ftxt.write(text + "\n")
                     if args.srt:
                         n += 1
